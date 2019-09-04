@@ -1,0 +1,121 @@
+import { Option, getMonoid as _getOptionMonoid, } from 'fp-ts/lib/Option';
+import { Omit, } from 'macoolka-fp/lib/TypeLevel'
+
+import { Getter, Lens, Optional } from 'monocle-ts';
+import { omit, pick, mapValues } from 'macoolka-fp/lib/object';
+import { Monoid, fold as _fold, } from 'fp-ts/lib/Monoid';
+import { Ord } from 'fp-ts/lib/Ord';
+import {array} from 'fp-ts/lib/Array'
+
+
+export type PCObject<T> = {
+    getNode: () => T,
+    getLeaf: () => T[]
+}
+export type ObjectKey = number | string;
+export type ObjectNode = Record<ObjectKey, any>
+
+export type TreeLeaf<T extends ObjectNode> = Record<ObjectKey, T>
+/**
+ * The provide ObjectTree's type.
+ * Contians Property and Selector
+ * @type
+ */
+export type ObjectTree<T extends ObjectNode, K extends ObjectKey> = Omit<T, K> & {
+    [k in K]?: TreeLeaf<ObjectTree<T, K>>
+};
+/**
+ * Quick acess
+ */
+export type ObjectTreeNodeV<T extends ObjectNode, K extends ObjectKey> = {
+    parent: ObjectTreeNodeV<T, K>[],
+    props: Omit<T, K>,
+    leafName: string,
+    childrens: Option<TreeLeaf<T>>
+};
+
+const propsLens = <T extends ObjectNode, K extends ObjectKey>(name: K) => new Lens<ObjectTree<T, K>, Omit<T, K>>(
+    s => omit(s, name), a => s => Object.assign({}, pick(s, name), a));
+
+const selectorOptional = <T extends ObjectNode, K extends ObjectKey>(name: K) =>
+    Optional.fromNullableProp<ObjectTree<T, K>>()(name);
+
+export const getLens = <T extends ObjectNode, K extends ObjectKey>(name: K) => ({
+    props: propsLens<T, K>(name),
+    childrens: selectorOptional<T, K>(name),
+    getter: (parent: ObjectTreeNodeV<T, K>[], leafName: string = 'root') => new Getter<ObjectTree<T, K>, ObjectTreeNodeV<T, K>>(a => ({
+        parent,
+        leafName,
+        props: propsLens<T, K>(name).get(a),
+        childrens: selectorOptional<T, K>(name).getOption(a),
+    })),
+});
+export const getterValues = <T extends ObjectNode, K extends ObjectKey>(name: K, leafName: string = 'root') => new Getter<ObjectTree<T, K>, ObjectTreeNodeV<T, K>[]>(a => {
+    const lens = getLens<T, K>(name);
+    const as: ObjectTreeNodeV<T, K>[] = [];
+    const go = (fa: ObjectTree<T, K>, parent: ObjectTreeNodeV<T, K>[] = [], leafName: string): ObjectTreeNodeV<T, K>[] => {
+        const result = lens.getter(parent, leafName).get(fa);
+        as.push(result);
+        lens.childrens.getOption(fa).map(v => Object.entries<ObjectTree<T, K>>(v).map(([key, value]) => go(value, [...parent, result], key)));
+        return as;
+    };
+    return go(a, [], leafName);
+})
+export const flatten = <T extends ObjectNode, K extends ObjectKey>(name: K) => (a: ObjectTree<T, K>): ObjectTree<T, K> => {
+    const as = getterValues<{ color?: string, margin?: number }, K>(name, '').get(a);
+    const result = as.map(a => {
+        let names = a.parent.map(b => b.leafName);
+        names.push(a.leafName);
+        return ([names.join(''), a.props])
+    });
+    return array.reduce(result, {}, (r, v) => v[0] === '' ? (Object.assign({}, r, v[1])) : ({ ...r, [v[0] as string]: v[1] })) as ObjectTree<T, K>
+}
+
+const empty = <A extends ObjectNode, K extends ObjectKey>() => ({} as ObjectTree<A, K>);
+export const leafMap = <A extends ObjectNode, B extends ObjectNode>
+    (a: TreeLeaf<A>, func: (p: A) => B): TreeLeaf<B> => mapValues(a, func);
+export const leaf = <A extends ObjectNode>(): Monoid<TreeLeaf<A>> & Ord<TreeLeaf<A>> => ({
+    ...Record<string,TreeLeaf<A>>(),
+});
+export const objectTree = <K extends ObjectKey>(name: K) => {
+
+    const getLens = <T extends ObjectNode>() => ({
+        props: propsLens<T, K>(name),
+        childrens: selectorOptional<T, K>(name),
+        getter: (parent: ObjectTreeNodeV<T, K>[], leafName: string = 'root') => new Getter<ObjectTree<T, K>, ObjectTreeNodeV<T, K>>(a => ({
+            parent,
+            leafName,
+            props: propsLens<T, K>(name).get(a),
+            childrens: selectorOptional<T, K>(name).getOption(a),
+        })),
+    });
+    const map = <A extends ObjectNode, B extends ObjectNode>
+        (node: ObjectTree<A, K>, func: (p: A) => B): ObjectTree<B, K> => {
+        const result = empty<B, K>();
+        const lensA = getLens<A>();
+        const lensB = getLens<B>();
+        const propA = lensA.props.get(node);
+        const nodeB = func(propA as any) as any;
+        const selectorB1 = lensB.childrens.getOption(nodeB);
+        const selectorA = lensA.childrens.getOption(node);
+
+        const selectorB2 = selectorA.map(a => leafMap(a, func));
+        const selectorB = _getOptionMonoid(leaf<B>()).concat(selectorB1, selectorB2);
+        const propResult: ObjectTree<B, K> = lensB.props.set(nodeB)(result);
+        return selectorB.map((a: any) => lensB.childrens.set(a)(propResult)).getOrElse(propResult);
+    }
+    return {
+        getLens,
+        map,
+    }
+}
+
+
+/**
+ * @function
+ * @since 1.0.0
+ */
+export const getMonoid = <A extends ObjectNode, K extends ObjectKey>(): Monoid<ObjectTree<A, K>> & Ord<ObjectTree<A, K>> => ({
+    ...Record<ObjectTree<A, K>>(),
+});
+export const fold = <A extends ObjectNode, K extends ObjectKey>() => _fold(getMonoid<A, K>());

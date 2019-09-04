@@ -1,0 +1,39 @@
+import {Eq,contramap,eqString} from 'fp-ts/lib/Eq';
+import {fromNullable} from 'fp-ts/lib/Option';
+import {Omit} from 'macoolka-fp/lib/TypeLevel'
+export interface Graph<A> {
+    getNeighbors:A[],
+    setoid:Setoid<A>,
+}
+
+export type ObjectTree<T extends {},K extends string> = Omit<T,K>& {
+    [k in K]?: Record<string,ObjectTree<T,K>>
+};
+
+export const c:ObjectTree<{color?:string,margin?:number},'selector'>={
+    color:'red',
+    selector:{
+        a:{
+            selector:{
+                hj:{
+                    margin:5,
+                    selector:{
+
+                    }
+                }
+            }
+        }
+    }
+}
+
+function fromObject<K extends string,A extends {[a:string]:any}>(name:K):(a:ObjectTree<A,K>)=>any{
+    const setoid=contramap<string,ObjectTree<A,K>&{_key:string}>(a=>a._key,setoidString);
+    return (a)=>{
+        const result=fromNullable(a[name]).map(b=>Object.entries(b).map(([k,v])=>({...v,_key:k}))).getOrElse([]);
+        return {
+            getNeighbors:()=>result,
+            setoid,
+        }
+    }
+  
+}

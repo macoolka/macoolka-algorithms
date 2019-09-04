@@ -1,0 +1,54 @@
+import { ObjectTree, getterValues,flatten } from './ObjectTree';
+import { array } from 'fp-ts/lib/Array';
+export const c: ObjectTree<{ color?: string, margin?: number }, 'selector'> = {
+    color: 'red',
+    selector: {
+        ':focus': {
+            color: '1',
+            selector: {
+                ':active': {
+                    margin: 5,
+                    selector: {
+                        ':disable': {
+                            color: 'blue'
+                        }
+                    }
+                },
+                ':disable': {
+                    color: 'white'
+                }
+            }
+        },
+        ':disable': {
+            color: 'yellow'
+        }
+    }
+}
+const expectResult = {
+    color: 'red',
+    ':focus': { color: '1' },
+    ':focus:active': { margin: 5 },
+    ':focus:active:disable': { color: 'blue' },
+    ':focus:disable': { color: 'white' },
+    ':disable': {
+        color: 'yellow'
+    }
+
+}
+describe('ObjectTree', () => {
+    it('getterValues', () => {
+        const as = getterValues<{ color?: string, margin?: number }, 'selector'>('selector', '').get(c);
+        const name = as.map(a => {
+            let names = a.parent.map(b => b.leafName);
+            names.push(a.leafName);
+            return ([names.join(''), a.props])
+        });
+        const result = array.reduce(name, {}, (r, v) => v[0] === '' ? (Object.assign({}, r, v[1])) : ({ ...r, [v[0] as string]: v[1] }))
+        expect(result).toEqual(expectResult)
+    })
+    it('flatten', () => {
+        const result = flatten<{ color?: string, margin?: number }, 'selector'>('selector')(c);
+        expect(result).toEqual(expectResult)
+    })
+
+})
