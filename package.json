@@ -50,7 +50,6 @@
   },
   "devDependencies": {
     "@types/jest": "^24.0.18",
-    "@types/mkdirp": "^0.5.2",
     "@types/node": "^12.7.2",
     "@types/rimraf": "^2.0.2",
     "jest": "^24.9.0",
