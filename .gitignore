@@ -33,6 +33,7 @@ node_modules
 .env
 *.pyc
 others/
+yarn.lock
 
 # Build
 lib/
